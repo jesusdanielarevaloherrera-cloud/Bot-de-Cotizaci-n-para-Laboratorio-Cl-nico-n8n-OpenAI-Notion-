@@ -10,10 +10,10 @@ Este proyecto es una solución automatizada para laboratorios clínicos que resp
 ## 📷 Demostración del Proyecto
 
 ### Flujo en n8n:
-![Diagrama del Flujo](flujo-n8n.png)
+![Diagrama del Flujo](flujo-n8n.jpeg)
 
 ### Respuesta en Telegram:
-![Demo en Telegram](demo-telegram.png)
+![Demo en Telegram](demo-telegram.jpeg)
 
 ## 🛠️ Tecnologías utilizadas
 * **n8n:** Orquestador de la automatización.
