@@ -1,0 +1,458 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "8e593b5b-00ee-4326-8512-9a0f3d91a357",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7dba1090-6f00-412b-a800-bdf33ca1ed4d",
+      "credentials": {
+        "telegramApi": {
+          "id": "LmD4GOgQcFUub3Uk",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!($json.message.voice || $json.message.audio) }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!($json.message.photo || ($json.message.document && String($json.message.document.mime_type || \"\").startsWith(\"image/\"))) }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Imagen"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Texto"
+        }
+      },
+      "id": "d9af71c7-4a3e-4b88-accc-688b3e8569c0",
+      "name": "Tipo de mensaje",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -416,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Telegram Trigger\").item.json.message.chat.id }}",
+        "text": "Bienvenidos a Servicios Médicos Medilab, un cordial saludo.\n\nHola, por los momentos no podemos escuchar audios, por favor escriba su consulta para poder ayudarlo",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "667a845e-003d-4891-a367-eac763321326",
+      "name": "Responder audio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -32,
+        -352
+      ],
+      "webhookId": "dbc5280f-45d2-446d-af30-f179c4f69696",
+      "credentials": {
+        "telegramApi": {
+          "id": "LmD4GOgQcFUub3Uk",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.photo ? $json.message.photo[$json.message.photo.length - 1].file_id : $json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "id": "91f07e3c-32dc-4db2-af85-fbd4cb49bde4",
+      "name": "Descargar imagen",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        -32
+      ],
+      "webhookId": "10b6d056-df59-4387-9aef-3ef120737508",
+      "credentials": {
+        "telegramApi": {
+          "id": "LmD4GOgQcFUub3Uk",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "id"
+        },
+        "text": "Esta imagen debería ser un récipe u orden médica de exámenes de laboratorio. Transcribe únicamente los nombres de los exámenes solicitados, separados por comas. Si la imagen no contiene exámenes de laboratorio o no se puede leer, responde exactamente: NINGUNO",
+        "inputType": "base64",
+        "options": {
+          "detail": "high",
+          "maxTokens": 500
+        }
+      },
+      "id": "b135ab48-e66e-489f-ae06-25a7ce4101fe",
+      "name": "Leer récipe",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        80,
+        192
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// Buscar el texto que devolvió la IA al leer la imagen (sin importar la forma de la respuesta)\nconst textos = [];\nconst walk = (o) => {\n  if (!o || typeof o !== 'object') return;\n  if (Array.isArray(o)) { o.forEach(walk); return; }\n  if (o.type === 'output_text' && typeof o.text === 'string') textos.push(o.text);\n  Object.values(o).forEach(v => { if (v && typeof v === 'object') walk(v); });\n};\nwalk(item);\n\n// Si es mensaje de texto usa el texto; si es imagen usa lo leído por la IA\nlet consulta = (item.message && item.message.text) ? item.message.text : textos.join(', ');\n\n// Agregar el texto que el cliente escribió debajo de la foto, si existe\nconst trigger = $('Telegram Trigger').first().json;\nconst caption = (trigger.message && trigger.message.caption) ? trigger.message.caption : '';\n\nconsulta = [consulta, caption].join(' ').replace(/NINGUNO/gi, '').trim();\n\nreturn [{ json: { consulta } }];"
+      },
+      "id": "9b247598-c13a-4ae1-b94a-6f4b7a60364a",
+      "name": "Preparar consulta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "dataSourceId": {
+          "__rl": true,
+          "value": "3eccbd5f-cee8-8051-95b9-000b095722ab",
+          "mode": "list",
+          "cachedResultName": "TARIFARIO DE EXAMANES",
+          "cachedResultUrl": "https://app.notion.com/p/3eccbd5fcee880a2a141d0182bb0f594"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "f590df02-f971-4196-ba5b-43e10188fac9",
+      "name": "Get many database pages",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        832,
+        32
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "x8WAGd0LQsZW9YOx",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "fb07a7cc-1c57-4691-a7f9-ab834b16dbeb",
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "id"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "=Eres el asistente de un laboratorio clínico. Este es el catálogo de exámenes disponibles: {{ $json.data.map(i => String(i.property_nombre || i.name || \"\").trim()).join(\" | \") }}. Identifica TODOS los exámenes que menciona el usuario (puede pedir varios) y devuelve cada uno con el nombre EXACTO como aparece en el catálogo, aunque el usuario lo escriba distinto, abreviado, sin tildes o con errores (por ejemplo \"hematologia\" = \"Hematologia completa\", \"orina\" = \"Uroanalisis\", \"heces\" = \"Coproanalisis\"). Si un examen pedido no está en el catálogo, inclúyelo tal como lo escribió el usuario. Responde ÚNICAMENTE con JSON estricto: {\"examenes\": [\"Nombre 1\", \"Nombre 2\"]}. Si no menciona exámenes, responde {\"examenes\": []}."
+            },
+            {
+              "content": "={{ $(\"Preparar consulta\").first().json.consulta }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "2ab6ce7d-63ba-4863-8feb-855d28c4a2c4",
+      "name": "Message a model",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        272,
+        16
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Catálogo completo de Notion\nconst catalogo = ($('Aggregate').first().json.data || []).filter(i => i && (i.property_nombre || i.name));\n\n// Respuesta de la IA\nconst rawText = String($input.first().json.output?.[0]?.content?.[0]?.text || '')\n  .trim()\n  .replace(/^```(?:json)?/i, '')\n  .replace(/```$/, '')\n  .trim();\n\nlet pedidos = [];\ntry {\n  const parsed = JSON.parse(rawText);\n  pedidos = Array.isArray(parsed) ? parsed : (parsed.examenes || []);\n} catch (e) {\n  pedidos = rawText.split(',');\n}\npedidos = pedidos.map(p => String(p || '').trim()).filter(p => p.length > 0);\n\n// Normalizar: minúsculas, sin tildes, sin espacios extra\nconst norm = t => String(t || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/\\s+/g, ' ').trim();\n\nconst encontrados = [];\nconst noEncontrados = [];\nfor (const pedido of pedidos) {\n  const np = norm(pedido);\n  let match = catalogo.find(i => norm(i.property_nombre || i.name) === np);\n  if (!match) match = catalogo.find(i => { const nc = norm(i.property_nombre || i.name); return nc.includes(np) || np.includes(nc); });\n  if (match) {\n    if (!encontrados.some(e => e.id === match.id)) encontrados.push(match);\n  } else {\n    noEncontrados.push(pedido);\n  }\n}\n\nlet texto = '';\nif (encontrados.length > 0) {\n  texto = encontrados.map(i => '• *' + String(i.property_nombre || i.name).trim() + '*: $' + (i.property_precio ?? 'Consultar') + '\\n  _Condiciones:_ ' + (i.property_condiciones || 'Sin especificaciones')).join('\\n\\n');\n  if (encontrados.length > 1) {\n    const total = encontrados.reduce((s, i) => s + (Number(i.property_precio) || 0), 0);\n    texto += '\\n\\n*Total:* $' + total;\n  }\n}\nif (noEncontrados.length > 0) {\n  texto += (texto ? '\\n\\n' : '') + 'No encontré en nuestro tarifario: ' + noEncontrados.join(', ') + '.';\n}\nif (!texto) {\n  texto = 'No identifiqué ningún examen en tu mensaje. Escríbeme el nombre de los exámenes que necesitas (por ejemplo: glicemia, urea, hematología).';\n}\n\ntexto = 'Bienvenidos a Servicios Médicos Medilab, un cordial saludo.\\n\\n' + texto;\n\nreturn [{ json: { texto, examenes_encontrados: encontrados.length, no_encontrados: noEncontrados } }];"
+      },
+      "id": "25c692a2-3fa4-426d-b401-fd92dcb791c5",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"] }}",
+        "text": "={{ $json.texto }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "523c048f-cb89-4d93-8e7d-d1a5a10e238c",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1280,
+        -48
+      ],
+      "webhookId": "198629b5-912b-44fe-b1f5-abf0daf581da",
+      "credentials": {
+        "telegramApi": {
+          "id": "LmD4GOgQcFUub3Uk",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Tipo de mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de mensaje": {
+      "main": [
+        [
+          {
+            "node": "Responder audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar imagen": {
+      "main": [
+        [
+          {
+            "node": "Leer récipe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer récipe": {
+      "main": [
+        [
+          {
+            "node": "Preparar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar consulta": {
+      "main": [
+        [
+          {
+            "node": "Get many database pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many database pages": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "68dcf8b7-ed30-4584-90e9-0744d573eed9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d011dee6cb72e8945b64f08a2457c15094eba021ae663cd0cf3c464e2a2643ea"
+  },
+  "nodeGroups": [
+    {
+      "id": "afc47282-0662-44f4-94bb-6959708065ac",
+      "name": "Leer récipe en foto",
+      "nodeIds": [
+        "91f07e3c-32dc-4db2-af85-fbd4cb49bde4",
+        "b135ab48-e66e-489f-ae06-25a7ce4101fe"
+      ],
+      "description": "Cuando el cliente envía una foto, la descarga y extrae los nombres de los exámenes escritos en el récipe"
+    },
+    {
+      "id": "f04ad7ec-b5dc-4551-9ca2-c5bba1e8b29e",
+      "name": "Cotizar exámenes",
+      "nodeIds": [
+        "9b247598-c13a-4ae1-b94a-6f4b7a60364a",
+        "f590df02-f971-4196-ba5b-43e10188fac9",
+        "fb07a7cc-1c57-4691-a7f9-ab834b16dbeb",
+        "2ab6ce7d-63ba-4863-8feb-855d28c4a2c4",
+        "25c692a2-3fa4-426d-b401-fd92dcb791c5",
+        "523c048f-cb89-4d93-8e7d-d1a5a10e238c"
+      ],
+      "description": "Cruza lo pedido (texto o récipe) con el tarifario de Notion y responde con precios, condiciones y total"
+    }
+  ],
+  "id": "z5wDZXaHLsd6vepV",
+  "tags": []
+}
